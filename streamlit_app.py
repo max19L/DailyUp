@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # ────────────────────────────────────────────────────────────────────────────────
-# THEME LIGHT/DARK FIX — Lisibilité corrigée sur les cartes moment
+# THEME LIGHT/DARK FIX
 # ────────────────────────────────────────────────────────────────────────────────
 base_theme = st.get_option("theme.base") or "light"
 st.markdown(
@@ -35,7 +35,6 @@ CSS = """
   --primaryGrad: linear-gradient(135deg,#7c3aed 0%, #ec4899 55%, #06b6d4 100%);
   --shadow: 0 14px 30px rgba(15,23,42,.08);
 
-  /* Couleurs des moments */
   --morning-1: #fdf2ff; --morning-2: #e0e7ff;
   --midday-1:  #eafffb; --midday-2:  #ecf4ff;
   --evening-1: #fff1f2; --evening-2: #f1e6ff;
@@ -54,7 +53,6 @@ CSS = """
   --evening-1: #581c87; --evening-2: #3b0764;
 }
 
-/* fond général */
 html, body, [data-testid="stAppViewContainer"]{
   background:
      radial-gradient(900px 600px at 90% 5%, rgba(236,72,153,.25), transparent 50%),
@@ -64,9 +62,7 @@ html, body, [data-testid="stAppViewContainer"]{
 }
 #MainMenu, footer {visibility: hidden;}
 header[data-testid="stHeader"] {background: transparent;}
-h1,h2,h3{letter-spacing:.2px;} h1{font-weight:900;} h2{font-weight:800;} h3{font-weight:700;}
 
-/* Hero */
 .hero{
   border-radius: 22px;
   padding: 26px;
@@ -82,12 +78,9 @@ h1,h2,h3{letter-spacing:.2px;} h1{font-weight:900;} h2{font-weight:800;} h3{font
   font-size: 2.2rem;
   margin-bottom: 8px;
 }
-
-/* Séparateur */
 .divider{ height:10px; border-radius: 999px; margin: 18px 0 10px 0;
   background: rgba(208,214,255,.25); border:1px solid var(--border); }
 
-/* Cartes génériques */
 .card{
   background: var(--card);
   border: 1px solid var(--border);
@@ -97,7 +90,6 @@ h1,h2,h3{letter-spacing:.2px;} h1{font-weight:900;} h2{font-weight:800;} h3{font
   margin: 10px 0 16px 0;
 }
 
-/* Inputs */
 textarea, .stTextArea textarea{
   background: rgba(255,255,255,.9) !important;
   color: var(--ink) !important;
@@ -110,7 +102,6 @@ textarea, .stTextArea textarea{
   border-color: #334155 !important;
 }
 
-/* Boutons */
 .btn-primary button{
   width: 100%;
   background: var(--primaryGrad);
@@ -122,14 +113,13 @@ textarea, .stTextArea textarea{
   transform: translateY(-1px); box-shadow: 0 18px 34px rgba(124,58,237,.33);
 }
 
-/* Callouts */
 .callout { padding: 12px 14px; border-radius: 12px; margin: 8px 0;
   border: 1px solid var(--border); color: var(--ink); background: rgba(238,242,255,.35); }
 :root[data-theme="dark"] .callout{
   background:#0b1426; border-color:#273245; color:#cbd5e1;
 }
 
-/* --- MOMENT CARDS FIX --- */
+/* MOMENT CARDS */
 .moment {
   border-radius: 16px;
   padding: 18px 20px;
@@ -140,11 +130,7 @@ textarea, .stTextArea textarea{
 .midday  { background: linear-gradient(135deg,var(--midday-1) 0%, var(--midday-2) 100%); }
 .evening { background: linear-gradient(135deg,var(--evening-1) 0%,var(--evening-2) 100%); }
 
-.moment h4 {
-  font-weight: 900;
-  margin: 0 0 6px 0;
-  color: #1e293b;
-}
+.moment h4 { font-weight: 900; margin: 0 0 6px 0; color: #1e293b; }
 [data-theme="dark"] .moment h4 { color: #f9fafb; }
 
 .moment ul li {
@@ -173,7 +159,6 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 # OUTILS
 # ────────────────────────────────────────────────────────────────────────────────
 def ai_is_available() -> bool:
-    """True si la clé OPENAI_API_KEY est présente et que le SDK se charge."""
     if not os.getenv("OPENAI_API_KEY"):
         return False
     try:
@@ -183,7 +168,6 @@ def ai_is_available() -> bool:
         return False
 
 def _format_steps(items) -> str:
-    """Retourne une <ul> sûre."""
     if not items:
         items = []
     if isinstance(items, str):
@@ -193,37 +177,37 @@ def _format_steps(items) -> str:
     return f'<ul class="plan">{lis}</ul>'
 
 # ────────────────────────────────────────────────────────────────────────────────
-# COACH FALLBACK (sans IA)
+# COACH FALLBACK
 # ────────────────────────────────────────────────────────────────────────────────
 def fallback_coach(note: str, slot: str) -> Dict:
     t = note.lower()
-    if any(w in t for w in ["exam", "examen", "test", "quiz"]):
+    if any(w in t for w in ["exam", "test", "quiz"]):
         return {
             "analysis": "Exam vibes: clarity + short activation + active recall.",
             "plan": [
                 "Pick one sub-topic and write it.",
-                "One Pomodoro (25 min): active read + recall without notes.",
-                "Create 5 flashcards and schedule a review."
+                "One Pomodoro (25 min): active read + recall.",
+                "Create 5 flashcards and review later."
             ],
             "mantra": "Small wins compound",
             "source": "fallback"
         }
-    if any(w in t for w in ["stress", "stressed", "anxious", "anxiété"]):
+    if any(w in t for w in ["stress", "stressed", "anxious"]):
         return {
             "analysis": "Stress detected: reduce mental load and start tiny.",
             "plan": [
-                "2-min brain dump. Circle 1 doable action.",
-                "Set a 10-min timer and do only step 1.",
-                "Remove one distraction (phone in another room)."
+                "2-min brain dump — circle 1 doable action.",
+                "Set a 10-min timer — focus only on that.",
+                "Remove 1 distraction (like your phone)."
             ],
             "mantra": "Begin before you think",
             "source": "fallback"
         }
     return {
-        "analysis": f"{slot.title()} — pick one clear, tiny objective.",
+        "analysis": f"{slot.title()} — pick one clear, small action.",
         "plan": [
             "Write the next 10-min task.",
-            "Prepare one thing that reduces friction.",
+            "Prepare something to reduce friction.",
             "Commit to just 5 minutes and start."
         ],
         "mantra": "One small step beats zero",
@@ -231,23 +215,22 @@ def fallback_coach(note: str, slot: str) -> Dict:
     }
 
 # ────────────────────────────────────────────────────────────────────────────────
-# COACH OPENAI (si clé dispo)
+# COACH OPENAI
 # ────────────────────────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are DailyUp, a tiny motivational coach.
+SYSTEM_PROMPT = """You are DailyUp, a micro-motivation coach.
 Return JSON only:
 { "analysis": "...", "plan": ["...", "...", "..."], "mantra": "..." }
-Energetic, practical, short answers only.
+Be short, practical, motivational.
 """
 
 def ai_coach(note: str, slot: str) -> Dict:
     from openai import OpenAI
     client = OpenAI()
-    user_prompt = f"Moment: {slot}\nNote: {note}"
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": f"Moment: {slot}\nNote: {note}"},
         ],
         temperature=0.95,
         max_tokens=220,
@@ -264,21 +247,33 @@ def ai_coach(note: str, slot: str) -> Dict:
     }
 
 # ────────────────────────────────────────────────────────────────────────────────
-# UI
+# UI — HERO SECTION (améliorée)
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown(
     """
 <div class="hero">
-  <div class="title">🌞 DailyUp — Tiny nudges. Big progress.</div>
-  <p style="max-width:820px; color:var(--muted); font-size:1.05rem;">
-    Tell me your main goal or how you feel. I’ll craft a <b>3-step micro-plan</b> and a short <b>mantra</b> you can use today.
-    Stay vertical: Step 1 → Step 2 → Step 3.
+  <div class="title">✨ Welcome to <b>DailyUp</b></div>
+  <p style="max-width:820px; color:var(--muted); font-size:1.05rem; line-height:1.6;">
+    Your personal <b>micro-coach</b> for building momentum — one tiny step at a time.
+    <br><br>
+    <b>Here’s how it works:</b>
+  </p>
+  <ul style="margin:.5rem 0 0 1rem; color:#334155; font-size:1rem;">
+    <li>💡 <b>Step 1</b> — Choose your moment: <i>morning</i>, <i>midday</i>, or <i>evening</i>. This sets your mindset.</li>
+    <li>🧠 <b>Step 2</b> — Tell me what’s on your mind: one honest sentence is enough.</li>
+    <li>🚀 <b>Step 3</b> — Hit <b>“Analyze & coach me”</b>. I’ll create a short 3-step plan and a mantra to guide your day.</li>
+  </ul>
+  <p style="color:var(--muted); font-size:.95rem; margin-top:12px;">
+    Every tap gives you a clear micro-plan to act on — designed to keep you moving.
   </p>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
+# ────────────────────────────────────────────────────────────────────────────────
+# STEP 1 — PICK MOMENT
+# ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 1 — Pick your moment")
 
@@ -295,14 +290,14 @@ MOMENT_INFO = {
     "midday": {
         "title": "Midday — Reset & refocus",
         "bullets": ["🔄 Energy: re-align quickly",
-                    "🎯 Focus: 15–20 min block",
+                    "🎯 Focus: one compact block (15–20 min)",
                     "🧭 Tone: pragmatic, centered"],
         "cls": "midday"
     },
     "evening": {
         "title": "Evening — Wrap & seed tomorrow",
         "bullets": ["🌙 Energy: calm close",
-                    "📝 Focus: reflect + seed next step",
+                    "📝 Focus: reflect + plan ahead",
                     "🧭 Tone: clarity and closure"],
         "cls": "evening"
     },
@@ -317,15 +312,21 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Step 2
+# ────────────────────────────────────────────────────────────────────────────────
+# STEP 2 — USER NOTE
+# ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 2 — Tell me your note")
 
-user_note = st.text_area("What’s on your mind right now?",
-                         placeholder="e.g., I’m stressed about my exam.",
-                         height=120)
+user_note = st.text_area(
+    "What’s on your mind right now?",
+    placeholder="e.g., I’m stressed about my exam and can’t focus.",
+    height=120,
+)
 
-# Step 3
+# ────────────────────────────────────────────────────────────────────────────────
+# STEP 3 — ANALYZE & COACH
+# ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 3 — Analyze & coach me")
 
@@ -337,7 +338,7 @@ if go:
     if not user_note.strip():
         st.warning("Please write a short note first.")
     else:
-        with st.spinner("Analyzing..."):
+        with st.spinner("Analyzing your note..."):
             use_ai = ai_is_available()
             result = ai_coach(user_note, slot) if use_ai else fallback_coach(user_note, slot)
 
