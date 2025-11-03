@@ -5,15 +5,14 @@ import pandas as pd
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 
-# --- Assets légers -----------------------------------------------------------------
-# Télécharge le lexique VADER si besoin
+# --- VADER ------------------------------------------------------------------------
 try:
     nltk.data.find("sentiment/vader_lexicon.zip")
 except LookupError:
     nltk.download("vader_lexicon")
 SIA = SentimentIntensityAnalyzer()
 
-# --- Config de page ----------------------------------------------------------------
+# --- Page config ------------------------------------------------------------------
 st.set_page_config(
     page_title="DailyUp",
     page_icon="☀️",
@@ -21,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# --- Style global (dark + néon, glassmorphism) ------------------------------------
+# --- CSS (thème sombre + néon, cartes glassmorphism) ------------------------------
 CSS = """
 <style>
 :root {
@@ -30,24 +29,18 @@ CSS = """
   --border: rgba(255, 255, 255, 0.08);
   --muted: #98a2b3;
   --text: #e6eaf0;
-  --brand: #00e5ff;          /* cyan néon */
-  --brand-2: #7cffb2;        /* vert menthe léger */
-  --danger: #ff4d6d;
-  --ok: #8cff5e;
-  --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  --brand: #00e5ff;
+  --brand-2: #7cffb2;
+  --shadow: 0 8px 30px rgba(0,0,0,.45);
 }
 
-html, body, [class^="css"]  {
+html, body, [class^="css"] {
   background: radial-gradient(1200px 800px at 10% -10%, #13203b66, transparent 60%),
               radial-gradient(900px 600px at 110% -20%, #0e1a2c66, transparent 60%),
-              var(--bg) !important;
+              var(--bg)!important;
   color: var(--text);
 }
 
-/* Titres */
-h1, h2, h3 { letter-spacing: .3px; }
-
-/* Cartes */
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -57,62 +50,45 @@ h1, h2, h3 { letter-spacing: .3px; }
   backdrop-filter: blur(8px);
 }
 
-/* Bouton principal */
 .stButton>button {
   background: linear-gradient(90deg, var(--brand), #6df7f7);
   color: #001018;
-  border: none;
-  padding: 0.75rem 1.1rem;
-  border-radius: 12px;
-  font-weight: 700;
+  border: none; padding: .75rem 1.1rem;
+  border-radius: 12px; font-weight: 700;
   transition: transform .04s ease;
 }
 .stButton>button:hover { transform: translateY(-1px); }
 
-/* Inputs */
 textarea, .stTextInput input {
-  background: rgba(15, 20, 28, 0.65) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
+  background: rgba(15,20,28,.65)!important;
+  color: var(--text)!important;
+  border: 1px solid var(--border)!important;
+  border-radius: 12px!important;
 }
 
-/* Tags pill */
-.pill {
-  display:inline-flex; align-items:center; gap:8px;
-  padding:6px 10px; border-radius:999px;
-  font-size:12.5px; letter-spacing:.3px;
-  border:1px solid var(--border); color:var(--muted);
-  background: rgba(18,24,34,.6);
-}
-.pill .dot { width:8px; height:8px; border-radius:50%; background:var(--brand); }
+.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;font-size:12.5px;letter-spacing:.3px;border:1px solid var(--border);color:var(--muted);background:rgba(18,24,34,.6)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--brand)}
 
-/* Petites métriques */
-.metric {
-  display:flex; flex-direction:column; gap:6px;
-  background:var(--card); border:1px solid var(--border);
-  border-radius:14px; padding:14px; text-align:left;
-}
-.metric .value { font-weight:800; font-size:22px; color:var(--brand-2); }
-.metric .label { font-size:12.5px; color:var(--muted); }
+.metric{display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+.metric .value{font-weight:800;font-size:22px;color:var(--brand-2)}
+.metric .label{font-size:12.5px;color:var(--muted)}
 
-/* Liste étapes */
-.steps li { margin:.2rem 0 .6rem 0; }
-hr { border-color: var(--border); }
+.steps li{margin:.2rem 0 .6rem 0}
+hr{border-color:var(--border)}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-# --- Utilitaires -------------------------------------------------------------------
+# --- Helpers ----------------------------------------------------------------------
 def analyze_sentiment(text: str):
     if not text.strip():
-        return {"label": "NEUTRAL", "score": 0.0}
+        return {"label": "NEUTRAL", "score": 0.0, "badge": "〰️"}
     s = SIA.polarity_scores(text)
     comp = s["compound"]
-    if comp >= 0.25: lbl, badge, col = "POSITIVE", "✅", "#8cff5e"
-    elif comp <= -0.25: lbl, badge, col = "NEGATIVE", "⚠️", "#ff4d6d"
-    else: lbl, badge, col = "NEUTRAL", "〰️", "#9ea7b2"
-    return {"label": lbl, "score": abs(comp), "badge": badge, "color": col}
+    if comp >= 0.25: lbl, badge = "POSITIVE", "✅"
+    elif comp <= -0.25: lbl, badge = "NEGATIVE", "⚠️"
+    else: lbl, badge = "NEUTRAL", "〰️"
+    return {"label": lbl, "score": abs(comp), "badge": badge}
 
 def get_prompt(slot: str) -> dict:
     bank = {
@@ -139,11 +115,11 @@ def coach_plan(slot: str, tone: str) -> list[str]:
         "morning": [
             "Choisis **1 micro-pas (≤10 min)**",
             "Coupe distractions **20 min**",
-            "Démarre **avant** de réfléchir",
+            "Démarre **avant** de trop réfléchir",
         ],
         "midday": [
             "Note **1 réussite**",
-            "Relance **une seule** tâche 10 min",
+            "Relance **une** tâche 10 min",
             "Ferme **une** distraction",
         ],
         "evening": [
@@ -183,19 +159,17 @@ def render_metric(label, value):
         unsafe_allow_html=True,
     )
 
-# --- State init --------------------------------------------------------------------
+# --- State ------------------------------------------------------------------------
 if "journal" not in st.session_state:
     st.session_state.journal = pd.DataFrame(
         columns=["timestamp", "slot", "message", "sentiment", "score", "plan"]
     )
 
 # --- Header -----------------------------------------------------------------------
-left, mid, right = st.columns([1.6, 1, 1.2])
+left, _, right = st.columns([1.6, .2, 1.2])
 with left:
     st.markdown("### ☀️ **DailyUp**")
     st.caption("De minuscules coups de pouce, des progrès massifs.")
-with mid:
-    pass
 with right:
     st.markdown('<span class="pill"><span class="dot"></span>Live Coach</span>', unsafe_allow_html=True)
 
@@ -204,16 +178,17 @@ st.markdown("<br/>", unsafe_allow_html=True)
 # --- Layout principal --------------------------------------------------------------
 col_left, col_right = st.columns([1.05, 1])
 
-# ---- Panneau gauche : paramètres & prompt ----------------------------------------
+# ---- Panneau gauche ---------------------------------------------------------------
 with col_left:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Réglages coach")
 
-    slot = st.segmented_control(
+    # Remplace segmented_control -> radio (horizontal)
+    slot = st.radio(
         "Moment",
         options=["morning", "midday", "evening"],
-        default="morning",
-        help="Choisis le créneau pour un prompt adapté.",
+        index=0,
+        horizontal=True,
     )
 
     tone = st.selectbox(
@@ -230,7 +205,7 @@ with col_left:
     st.info(pr["question"])
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---- Panneau droit : interaction --------------------------------------------------
+# ---- Panneau droit ---------------------------------------------------------------
 with col_right:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Ton input")
@@ -294,7 +269,7 @@ with out_right:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Journal / Historique ----------------------------------------------------------
+# --- Journal -----------------------------------------------------------------------
 st.markdown("<br/>", unsafe_allow_html=True)
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.subheader("📜 Journal")
@@ -310,7 +285,6 @@ else:
     st.caption("Ton journal est vide pour l’instant.")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- Footer doux -------------------------------------------------------------------
 st.markdown(
     "<div style='text-align:center;color:var(--muted);padding:10px 0;opacity:.9'>"
     "Built with 💙 Streamlit • DailyUp"
