@@ -5,7 +5,7 @@ import html
 import random
 import hashlib
 from datetime import datetime, date
-from typing import Dict, List
+from typing import Dict
 
 import pandas as pd
 import streamlit as st
@@ -102,6 +102,17 @@ h3{font-weight: 700;}
   opacity: .18;
   z-index: 0;
 }
+.banner .b-label{
+  position: relative; z-index: 1;
+  display:inline-block;
+  font-weight: 900; letter-spacing:.5px;
+  text-transform: uppercase;
+  font-size: .9rem;
+  background: var(--primaryGrad);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  margin-bottom: 6px;
+}
 .banner .b-quote{
   position: relative;
   z-index: 1;
@@ -159,7 +170,7 @@ h3{font-weight: 700;}
   transform: rotate(18deg);
 }
 
-/* section divider */
+/* divider */
 .divider{ height:10px; border-radius: 999px; margin: 18px 0 10px 0; background: #eef1ff; border:1px solid #e3e7ff; }
 @media (prefers-color-scheme: dark){
   .divider{ background:#1c2140; border-color:#2b335a; }
@@ -175,23 +186,6 @@ h3{font-weight: 700;}
   margin: 10px 0 16px 0;
 }
 .card h3{ margin-top:6px; }
-
-/* small quote card (Step 1) */
-.qcard{
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px 16px;
-  box-shadow: var(--shadow);
-}
-.qtext{
-  font-size: 1.05rem;
-  line-height: 1.55rem;
-}
-.qauthor{
-  margin-top: 8px;
-  color: var(--muted);
-}
 
 /* inputs */
 textarea, .stTextArea textarea{
@@ -274,7 +268,7 @@ ul.plan li{
   ul.plan li{ background:#0f1429; border-color:#252b43; }
 }
 
-/* moment highlight card (stronger contrast) */
+/* moment card */
 .moment{
   border-radius: 16px; padding: 16px 18px; color:#0b1020;
   border:1px solid var(--border); box-shadow:var(--shadow);
@@ -300,7 +294,6 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 # UTILITIES
 # ────────────────────────────────────────────────────────────────────────────────
 def ai_is_available() -> bool:
-    """True if OPENAI_API_KEY exists and SDK loads."""
     if not os.getenv("OPENAI_API_KEY"):
         return False
     try:
@@ -310,7 +303,6 @@ def ai_is_available() -> bool:
         return False
 
 def _format_steps(items) -> str:
-    """Return a safe <ul>. Accepts str or list[str]."""
     if not items:
         items = []
     if isinstance(items, str):
@@ -320,10 +312,9 @@ def _format_steps(items) -> str:
     return f'<ul class="plan">{lis}</ul>'
 
 # ────────────────────────────────────────────────────────────────────────────────
-# BIG QUOTE-OF-THE-DAY (TOP banner, scientific/inspirational)
+# QUOTE OF THE DAY (TOP banner)
 # ────────────────────────────────────────────────────────────────────────────────
 BIG_QUOTES = [
-    # (title, text, author)
     ("Two-Minute Rule", "If it takes less than two minutes, do it now. Tiny wins spark momentum and make action easier next time.", "James Clear (Atomic Habits)"),
     ("Self-Determination Theory", "Sustainable motivation grows from autonomy, competence, and relatedness. Create a sense of mastery and connection.", "Deci & Ryan (2000)"),
     ("Pygmalion Effect", "High expectations change behavior and results. Believe you can improve—your brain follows your focus.", "Rosenthal & Jacobson (1968)"),
@@ -332,46 +323,15 @@ BIG_QUOTES = [
 ]
 
 def big_quote_of_the_day() -> Dict[str, str]:
-    """Deterministic daily pick so all users see the same banner each day."""
     seed = f"{date.today().isoformat()}::banner"
     idx = int(hashlib.sha256(seed.encode()).hexdigest(), 16) % len(BIG_QUOTES)
     title, text, author = BIG_QUOTES[idx]
     return {"title": title, "text": text, "author": author}
 
-# ────────────────────────────────────────────────────────────────────────────────
-# QUOTES BY MOMENT (small card in Step 1)
-# ────────────────────────────────────────────────────────────────────────────────
-QUOTES = {
-    "morning": [
-        ("Start where you are. Use what you have. Do what you can.", "Arthur Ashe"),
-        ("Small steps every day become big changes.", "Unknown"),
-        ("Action cures fear.", "David Schwartz"),
-        ("Begin anywhere.", "John Cage"),
-    ],
-    "midday": [
-        ("You can restart at any moment.", "Unknown"),
-        ("Focus on the next right move.", "Oprah Winfrey"),
-        ("Don’t break the chain.", "Jerry Seinfeld"),
-        ("Progress over perfection.", "Unknown"),
-    ],
-    "evening": [
-        ("What gets measured gets improved.", "Peter Drucker"),
-        ("Reflect, refine, and reset.", "Unknown"),
-        ("Done is better than perfect.", "Sheryl Sandberg"),
-        ("Tomorrow is built tonight.", "Unknown"),
-    ],
-}
-
-def quote_of_the_day(moment: str) -> Dict[str, str]:
-    """Stable quote for (day, moment)."""
-    pool = QUOTES.get(moment, QUOTES["morning"])
-    seed_str = f"{date.today().isoformat()}::{moment}"
-    idx = int(hashlib.sha256(seed_str.encode()).hexdigest(), 16) % len(pool)
-    text, author = pool[idx]
-    return {"text": text, "author": author}
+# (Small quotes list kept out — mini quote removed as requested)
 
 # ────────────────────────────────────────────────────────────────────────────────
-# FALLBACK COACH (no AI)
+# FALLBACK COACH
 # ────────────────────────────────────────────────────────────────────────────────
 def fallback_coach(note: str, slot: str) -> Dict:
     t = note.lower()
@@ -420,7 +380,7 @@ def fallback_coach(note: str, slot: str) -> Dict:
     }
 
 # ────────────────────────────────────────────────────────────────────────────────
-# OPENAI COACH (if key available)
+# OPENAI COACH
 # ────────────────────────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are DailyUp, a tiny motivational coach.
 Return only compact JSON with:
@@ -481,11 +441,11 @@ Example:
 SIA = SentimentIntensityAnalyzer()
 
 KEYS = {
-    "sad": {"sad", "sadness", "depressed", "down", "cry", "unhappy", "low"},
-    "anx": {"anxious", "anxiety", "nervous", "worried", "panic", "stressed"},
-    "mot": {"motivation", "motivated", "drive", "excited", "inspired", "eager"},
-    "focus": {"focus", "concentrate", "study", "deep", "locked", "attention"},
-    "tired": {"tired", "exhausted", "fatigued", "sleepy", "drained"},
+    "sad": {"sad", "sadness,","depressed","down","cry","unhappy","low"},
+    "anx": {"anxious","anxiety","nervous","worried","panic","stressed"},
+    "mot": {"motivation","motivated","drive","excited","inspired","eager"},
+    "focus": {"focus","concentrate","study","deep","locked","attention"},
+    "tired": {"tired","exhausted","fatigued","sleepy","drained"},
 }
 
 def _density(note: str, vocab: set) -> float:
@@ -493,14 +453,11 @@ def _density(note: str, vocab: set) -> float:
     if not t:
         return 0.0
     count = sum(1 for w in t if w in vocab)
-    return min(1.0, count / max(4, len(t)/6))   # soft density
+    return min(1.0, count / max(4, len(t)/6))
 
 def sentiment_radar(note: str) -> Dict[str, float]:
-    """Six normalized axes (0..1) based on VADER + keywords."""
     vs = SIA.polarity_scores(note or "")
-    pos = vs["pos"]
-    neg = vs["neg"]
-    comp = vs["compound"]  # -1..1
+    pos = vs["pos"]; neg = vs["neg"]; comp = vs["compound"]
 
     sad = _density(note, KEYS["sad"])
     anx = _density(note, KEYS["anx"])
@@ -525,17 +482,13 @@ def sentiment_radar(note: str) -> Dict[str, float]:
 
 def radar_chart(scores: Dict[str, float]) -> go.Figure:
     cats = list(scores.keys())
-    vals = list(scores.values()) + [list(scores.values())[0]]  # close loop
+    vals = list(scores.values()) + [list(scores.values())[0]]
     cats_closed = cats + [cats[0]]
 
     fig = go.Figure(
         data=go.Scatterpolar(
-            r=vals,
-            theta=cats_closed,
-            fill='toself',
-            name='Sentiment',
-            line=dict(color="#7c3aed"),
-            fillcolor="rgba(124,58,237,.20)"
+            r=vals, theta=cats_closed, fill='toself', name='Sentiment',
+            line=dict(color="#7c3aed"), fillcolor="rgba(124,58,237,.20)"
         )
     )
     fig.update_layout(
@@ -555,11 +508,12 @@ def radar_chart(scores: Dict[str, float]) -> go.Figure:
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="container">', unsafe_allow_html=True)
 
-# TOP BANNER: Quote of the Day (scientific/inspirational)
+# TOP BANNER: Quote of the Day (big only)
 bq = big_quote_of_the_day()
 st.markdown(
     f"""
 <div class="banner">
+  <div class="b-label">QUOTE OF THE DAY</div>
   <div class="b-quote">“{html.escape(bq['text'])}”</div>
   <div class="b-author">— {html.escape(bq['author'])} · <span style="opacity:.8">{html.escape(bq['title'])}</span></div>
 </div>
@@ -588,9 +542,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ────────────────────────────────────────────────────────────────────────────────
-# STEP 1 — MOMENT + VISUAL + SMALL QUOTE
-# ────────────────────────────────────────────────────────────────────────────────
+# STEP 1 — MOMENT (mini quote removed)
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 1 — Pick your moment")
 
@@ -644,28 +596,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Small quote card (depends on moment)
-q = quote_of_the_day(slot)
-st.markdown(
-    f"""
-<div class="qcard">
-  <div class="qtext">“{html.escape(q['text'])}”</div>
-  <div class="qauthor">— {html.escape(q['author'])}</div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
+st.caption({
+    "morning": "Prompt used by the coach: Morning Boost — one small step beats zero.",
+    "midday": "Prompt used by the coach: Midday Reset — turn one tiny win.",
+    "evening": "Prompt used by the coach: Evening Wrap — reflect and set tomorrow’s seed."
+}[slot])
 
-NUDGES = {
-    "morning": "Morning Boost — one small step beats zero.",
-    "midday": "Midday Reset — turn one tiny win.",
-    "evening": "Evening Wrap — reflect and set tomorrow’s seed."
-}
-st.caption(f"Prompt used by the coach: {NUDGES[slot]}")
-
-# ────────────────────────────────────────────────────────────────────────────────
 # STEP 2 — USER NOTE + LIVE RADAR
-# ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 2 — Tell me your note")
 
@@ -690,7 +627,6 @@ with c2:
         st.experimental_rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Live radar
 if (user_note or "").strip():
     st.markdown("#### Mood radar")
     scores = sentiment_radar(user_note)
@@ -699,9 +635,7 @@ if (user_note or "").strip():
     with st.expander("Radar values"):
         st.json(scores)
 
-# ────────────────────────────────────────────────────────────────────────────────
 # STEP 3 — ANALYZE & COACH
-# ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 3 — Analyze & coach me")
 
@@ -715,17 +649,11 @@ if go:
     else:
         use_ai = ai_is_available()
         if not use_ai:
-            st.markdown(
-                '<div class="callout info">ℹ️ OpenAI key not found — using smart fallback.</div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="callout info">ℹ️ OpenAI key not found — using smart fallback.</div>', unsafe_allow_html=True)
         with st.spinner("Crafting your plan…"):
             result = ai_coach(user_note, slot) if use_ai else fallback_coach(user_note, slot)
         if isinstance(result, dict) and result.get("error"):
-            st.markdown(
-                '<div class="callout warn">⚠️ AI error — switched to smart fallback.</div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="callout warn">⚠️ AI error — switched to smart fallback.</div>', unsafe_allow_html=True)
             result = fallback_coach(user_note, slot)
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -742,13 +670,6 @@ if go:
         st.markdown('</div>', unsafe_allow_html=True)
 
         with st.expander("Debug (optional)"):
-            st.json(
-                {
-                    "slot": slot,
-                    "note": user_note,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "engine": result.get("source", "n/a"),
-                }
-            )
+            st.json({"slot": slot, "note": user_note, "timestamp": datetime.utcnow().isoformat(), "engine": result.get("source", "n/a")})
 
 st.markdown('</div>', unsafe_allow_html=True)  # container
