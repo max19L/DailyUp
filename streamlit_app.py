@@ -1,293 +1,392 @@
 # streamlit_app.py
+# DailyUp — small nudges, big progress.
+# Features: beautiful UI, AI coach (OpenAI w/ fallback), dashboard, chat, focus timer, local SQLite logging
+
+import os
+import time
+import sqlite3
+from contextlib import closing
+from datetime import datetime, timedelta
+from typing import List, Dict, Any
+
 import streamlit as st
-from datetime import datetime
 import pandas as pd
+import altair as alt
+
+# Sentiment (lightweight, Py3.13-friendly)
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 
-# --- VADER ------------------------------------------------------------------------
+# Optional AI (OpenAI) — only if key provided
+OPENAI_OK = False
+try:
+    from openai import OpenAI
+    OPENAI_OK = True
+except Exception:
+    OPENAI_OK = False
+
+
+# -----------------------------
+# App Config & Styling
+# -----------------------------
+st.set_page_config(
+    page_title="DailyUp — Live Coach",
+    page_icon="🌞",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={"Get help": None, "Report a bug": None, "About": "DailyUp • Small nudges, big progress."},
+)
+
+# Global CSS (glassmorphism + neon accents, minimal + futuristic)
+st.markdown(
+    """
+    <style>
+      :root {
+        --bg1: #0e1117;
+        --card-glass: rgba(255,255,255,0.06);
+        --card-border: rgba(255,255,255,0.15);
+        --accent: #7c3aed;            /* violet */
+        --accent-2: #22d3ee;          /* cyan */
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --good: #34d399;              /* green */
+        --bad:  #f43f5e;              /* rose */
+      }
+
+      .main {
+        background: radial-gradient(1200px 1200px at 80% -10%, #1f2937 0%, #0e1117 55%);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial;
+      }
+
+      .glass {
+        background: var(--card-glass);
+        border: 1px solid var(--card-border);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.08) inset;
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        padding: 18px 20px;
+      }
+
+      .headline {
+        font-size: 2.1rem; font-weight: 800; letter-spacing: .2px;
+        color: #fff; margin-bottom: .25rem;
+      }
+
+      .tagline {
+        color: var(--muted); margin-top: .2rem;
+      }
+
+      .chip {
+        display:inline-flex; align-items:center; gap:8px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        color:white; padding:6px 12px; border-radius:999px; font-size:.85rem; font-weight:600;
+        box-shadow: 0 8px 24px rgba(34,211,238,0.22);
+      }
+
+      .neon-title {
+        text-shadow: 0 0 14px rgba(124,58,237,.55), 0 0 28px rgba(34,211,238,.35);
+      }
+
+      .metric-good { color: var(--good); }
+      .metric-bad  { color: var(--bad); }
+      .muted { color: var(--muted); }
+
+      /* Streamlit element tweaks */
+      .stButton>button {
+        border-radius: 999px !important;
+        padding: .6rem 1.1rem !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        background: linear-gradient(90deg, #4c1d95, #0ea5e9) !important;
+        color: #fff !important;
+      }
+      .stTextInput>div>div>input, .stTextArea>div>div>textarea, .stSelectbox>div>div>div {
+        background: rgba(255,255,255,0.02) !important;
+        border-radius: 12px !important;
+        border: 1px solid rgba(255,255,255,0.14) !important;
+        color: #e5e7eb !important;
+      }
+      .small { font-size:.88rem; }
+    </style>
+    """, unsafe_allow_html=True
+)
+
+# -----------------------------
+# Light persistence (SQLite)
+# -----------------------------
+DB_PATH = "dailyup_data.db"
+
+def _ensure_db():
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn, closing(conn.cursor()) as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS logs (
+              id INTEGER PRIMARY KEY,
+              ts TEXT,
+              slot TEXT,
+              user_text TEXT,
+              tone TEXT,
+              sentiment TEXT,
+              score REAL,
+              plan TEXT,
+              mantra TEXT
+            )
+        """)
+_ensure_db()
+
+def save_log(row: Dict[str, Any]):
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn, closing(conn.cursor()) as cur:
+        cur.execute("""
+            INSERT INTO logs (ts, slot, user_text, tone, sentiment, score, plan, mantra)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (row["ts"], row["slot"], row["user_text"], row["tone"], row["sentiment"], row["score"], row["plan"], row["mantra"]))
+
+def read_logs() -> pd.DataFrame:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        df = pd.read_sql_query("SELECT * FROM logs ORDER BY ts DESC", conn)
+    return df
+
+# -----------------------------
+# Sentiment (VADER)
+# -----------------------------
 try:
     nltk.data.find("sentiment/vader_lexicon.zip")
 except LookupError:
     nltk.download("vader_lexicon")
+
 SIA = SentimentIntensityAnalyzer()
 
-# --- Page config ------------------------------------------------------------------
-st.set_page_config(
-    page_title="DailyUp",
-    page_icon="☀️",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-
-# --- CSS (thème sombre + néon, cartes glassmorphism) ------------------------------
-CSS = """
-<style>
-:root {
-  --bg: #0b0f15;
-  --card: rgba(19, 24, 34, 0.65);
-  --border: rgba(255, 255, 255, 0.08);
-  --muted: #98a2b3;
-  --text: #e6eaf0;
-  --brand: #00e5ff;
-  --brand-2: #7cffb2;
-  --shadow: 0 8px 30px rgba(0,0,0,.45);
-}
-
-html, body, [class^="css"] {
-  background: radial-gradient(1200px 800px at 10% -10%, #13203b66, transparent 60%),
-              radial-gradient(900px 600px at 110% -20%, #0e1a2c66, transparent 60%),
-              var(--bg)!important;
-  color: var(--text);
-}
-
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 18px 18px 14px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(8px);
-}
-
-.stButton>button {
-  background: linear-gradient(90deg, var(--brand), #6df7f7);
-  color: #001018;
-  border: none; padding: .75rem 1.1rem;
-  border-radius: 12px; font-weight: 700;
-  transition: transform .04s ease;
-}
-.stButton>button:hover { transform: translateY(-1px); }
-
-textarea, .stTextInput input {
-  background: rgba(15,20,28,.65)!important;
-  color: var(--text)!important;
-  border: 1px solid var(--border)!important;
-  border-radius: 12px!important;
-}
-
-.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;font-size:12.5px;letter-spacing:.3px;border:1px solid var(--border);color:var(--muted);background:rgba(18,24,34,.6)}
-.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--brand)}
-
-.metric{display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
-.metric .value{font-weight:800;font-size:22px;color:var(--brand-2)}
-.metric .label{font-size:12.5px;color:var(--muted)}
-
-.steps li{margin:.2rem 0 .6rem 0}
-hr{border-color:var(--border)}
-</style>
-"""
-st.markdown(CSS, unsafe_allow_html=True)
-
-# --- Helpers ----------------------------------------------------------------------
-def analyze_sentiment(text: str):
+def get_sentiment(text: str) -> Dict[str, Any]:
     if not text.strip():
-        return {"label": "NEUTRAL", "score": 0.0, "badge": "〰️"}
-    s = SIA.polarity_scores(text)
-    comp = s["compound"]
-    if comp >= 0.25: lbl, badge = "POSITIVE", "✅"
-    elif comp <= -0.25: lbl, badge = "NEGATIVE", "⚠️"
-    else: lbl, badge = "NEUTRAL", "〰️"
-    return {"label": lbl, "score": abs(comp), "badge": badge}
+        return {"label": "NEUTRAL", "score": 0.0}
+    s = SIA.polarity_scores(text)["compound"]
+    label = "POSITIVE" if s >= 0.15 else ("NEGATIVE" if s <= -0.15 else "NEUTRAL")
+    return {"label": label, "score": float(s)}
 
-def get_prompt(slot: str) -> dict:
-    bank = {
-        "morning": {
-            "title": "🌅 Morning Boost",
-            "quote": "Consistency beats intensity.",
-            "question": "Quel est TON micro-objectif de ce matin (≤10 min) ?"
-        },
-        "midday": {
-            "title": "🌤 Midday Check-in",
-            "quote": "One small step today beats zero.",
-            "question": "Où en es-tu ? Quelle petite friction à dégager ?"
-        },
-        "evening": {
-            "title": "🌙 Evening Wrap",
-            "quote": "Tiny wins compound.",
-            "question": "Qu’as-tu appris aujourd’hui ? Quel 1er geste prépare demain ?"
-        }
+# -----------------------------
+# AI Coach (OpenAI or Fallback)
+# -----------------------------
+def get_openai_client():
+    api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if OPENAI_OK and api_key:
+        return OpenAI(api_key=api_key)
+    return None
+
+def generate_ai_coach_reply(user_text: str, slot: str, tone: str) -> Dict[str, str]:
+    """
+    Return dict with keys: plan, mantra
+    Uses OpenAI if key is present; otherwise returns a simple deterministic fallback.
+    """
+    client = get_openai_client()
+    prompt = f"""
+You are a concise, kind productivity coach.
+
+Context:
+- User wrote: "{user_text}"
+- Time window: {slot}
+- Desired tone: {tone}
+
+Task:
+1) Return a *3-step micro-plan* using a numbered list.
+2) Return a short *mantra* (3-5 words, no quotes).
+Be brief, friendly, and practical.
+"""
+
+    if client:
+        try:
+            # Small, fast model (adjust if needed)
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are DailyUp, a minimalist productivity coach."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.4,
+            )
+            text = resp.choices[0].message.content.strip()
+            # Heuristic split: assume plan first, mantra last line
+            plan = text
+            mantra = "Small wins compound"
+            for line in text.splitlines()[::-1]:
+                line = line.strip(" -•*").strip()
+                if 2 <= len(line.split()) <= 6 and len(line) <= 40:
+                    mantra = line
+                    break
+            return {"plan": plan, "mantra": mantra}
+        except Exception as e:
+            st.toast(f"Using fallback coach (API error).", icon="⚠️")
+
+    # Fallback plan (no API)
+    slot_hint = {
+        "morning":  "Pick one priority • 10-min warm start • Remove distractions",
+        "midday":   "Clarify next tiny step • 10-min deep dive • Close one distraction",
+        "evening":  "Recap one win • Set next first step • Prep tomorrow",
+    }.get(slot, "Pick one priority • 10-min start • Close distractions")
+
+    return {
+        "plan": f"""1) {slot_hint.split('•')[0].strip()}
+2) {slot_hint.split('•')[1].strip()}
+3) {slot_hint.split('•')[2].strip()}""",
+        "mantra": "Begin before you think",
     }
-    return bank.get(slot, bank["morning"])
 
-def coach_plan(slot: str, tone: str) -> list[str]:
-    base = {
-        "morning": [
-            "Choisis **1 micro-pas (≤10 min)**",
-            "Coupe distractions **20 min**",
-            "Démarre **avant** de trop réfléchir",
-        ],
-        "midday": [
-            "Note **1 réussite**",
-            "Relance **une** tâche 10 min",
-            "Ferme **une** distraction",
-        ],
-        "evening": [
-            "Log **1 apprentissage**",
-            "Prépare **le 1er pas** de demain",
-            "Range **2 minutes**",
-        ],
-    }[slot]
+# -----------------------------
+# State init
+# -----------------------------
+if "timer_running" not in st.session_state:
+    st.session_state.timer_running = False
+if "timer_end" not in st.session_state:
+    st.session_state.timer_end = None
 
-    if tone == "supportive":
-        base[0] = "Respire 20s, puis **1 micro-pas (≤10 min)**"
-    elif tone == "challenging":
-        base[-1] = "Publie **une preuve** (photo/note) de ton avance"
-
-    return base
-
-def add_to_journal(slot, user_text, sentiment, plan):
-    row = {
-        "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
-        "slot": slot,
-        "message": user_text,
-        "sentiment": sentiment["label"],
-        "score": round(sentiment["score"], 2),
-        "plan": " | ".join(plan),
-    }
-    st.session_state.journal = pd.concat(
-        [st.session_state.journal, pd.DataFrame([row])],
-        ignore_index=True,
-    )
-
-def render_metric(label, value):
-    st.markdown(
-        f"""<div class="metric">
-                <div class="label">{label}</div>
-                <div class="value">{value}</div>
-            </div>""",
-        unsafe_allow_html=True,
-    )
-
-# --- State ------------------------------------------------------------------------
-if "journal" not in st.session_state:
-    st.session_state.journal = pd.DataFrame(
-        columns=["timestamp", "slot", "message", "sentiment", "score", "plan"]
-    )
-
-# --- Header -----------------------------------------------------------------------
-left, _, right = st.columns([1.6, .2, 1.2])
+# -----------------------------
+# Header
+# -----------------------------
+left, right = st.columns([0.75, 0.25])
 with left:
-    st.markdown("### ☀️ **DailyUp**")
-    st.caption("De minuscules coups de pouce, des progrès massifs.")
+    st.markdown('<div class="headline neon-title">🌞 DailyUp</div>', unsafe_allow_html=True)
+    st.caption("Small nudges, big progress.")
 with right:
-    st.markdown('<span class="pill"><span class="dot"></span>Live Coach</span>', unsafe_allow_html=True)
+    st.markdown('<div style="text-align:right;margin-top:10px;"><span class="chip">Live Coach</span></div>', unsafe_allow_html=True)
+st.write("")
 
-st.markdown("<br/>", unsafe_allow_html=True)
-
-# --- Layout principal --------------------------------------------------------------
-col_left, col_right = st.columns([1.05, 1])
-
-# ---- Panneau gauche ---------------------------------------------------------------
-with col_left:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("Réglages coach")
-
-    # Remplace segmented_control -> radio (horizontal)
-    slot = st.radio(
-        "Moment",
-        options=["morning", "midday", "evening"],
-        index=0,
-        horizontal=True,
-    )
-
-    tone = st.selectbox(
-        "Tonalité du coach",
-        ["neutral", "supportive", "challenging"],
-        index=0,
-        help="Neutral: factuel • Supportive: empathique • Challenging: énergique",
-    )
-
-    pr = get_prompt(slot)
+# -----------------------------
+# Sidebar — Settings
+# -----------------------------
+with st.sidebar:
+    st.markdown("### Coach settings")
+    slot = st.segmented_control("Select your time", options=["morning", "midday", "evening"], default="morning")
+    tone = st.selectbox("Coach tone (override)", ["neutral", "encouraging", "challenging", "calm"], index=0)
     st.markdown("---")
-    st.markdown(f"#### {pr['title']}")
-    st.caption(f"“{pr['quote']}”")
-    st.info(pr["question"])
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("### Export / Data")
+    if st.button("Download CSV"):
+        df = read_logs()
+        st.download_button("Download data.csv", df.to_csv(index=False), "dailyup_logs.csv", mime="text/csv")
 
-# ---- Panneau droit ---------------------------------------------------------------
-with col_right:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("Ton input")
+# -----------------------------
+# Layout: Coach + Right panel
+# -----------------------------
+col_left, col_right = st.columns([0.58, 0.42], gap="large")
 
-    user_text = st.text_area(
-        "Écris 1–2 phrases (sentiment détecté automatiquement)",
-        height=120,
-        label_visibility="collapsed",
-        placeholder="Par ex. : 'je procrastine sur le rapport' ou 'bonne énergie, je veux finaliser...'",
-    )
+# === Left: Prompt + Coach
+with col_left:
+    st.markdown('<div class="glass">', unsafe_allow_html=True)
+    st.subheader("Coach desk", divider="blue")
+    user_text = st.text_area("What's up?", placeholder="Tell me how you're doing or your main goal...", height=96)
 
-    c1, c2, c3 = st.columns([1, 1, 1])
+    c1, c2 = st.columns([0.4, 0.6])
     with c1:
-        get_btn = st.button("✨ Générer un prompt")
+        get_btn = st.button("Get prompt")
     with c2:
-        send_btn = st.button("🚀 Proposer un plan")
-    with c3:
-        clear_btn = st.button("🧹 Effacer")
+        send_btn = st.button("Send reply")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    sentiment_label = "n/a"
+    sentiment_score = 0.0
+    plan, mantra = "", ""
 
-# ---- Sorties ----------------------------------------------------------------------
-st.markdown("<br/>", unsafe_allow_html=True)
-out_left, out_right = st.columns([1, 1])
-
-with out_left:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("🎯 Prompt")
     if get_btn:
-        st.success(f"**{pr['title']}** — {pr['quote']}\n\n**Question** — {pr['question']}")
-    else:
-        st.caption("Clique sur *Générer un prompt* pour afficher la question du moment.")
-    st.markdown("</div>", unsafe_allow_html=True)
+        with st.spinner("Analyzing…"):
+            # Generate a fresh prompt (mood poke)
+            prompts = {
+                "morning": "Morning Boost — One small step today beats zero.",
+                "midday": "Midday Check-in — Tiny steps keep momentum.",
+                "evening": "Evening Wrap — Log one win, prep tomorrow.",
+            }
+            st.session_state["prompt_block"] = prompts.get(slot, "What's one small step now?")
+        st.success("Prompt generated ↓")
 
-with out_right:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("🧠 Analyse & plan")
+    st.markdown("###### Prompt")
+    st.write(st.session_state.get("prompt_block", "Click **Get prompt** to receive a nudge."))
 
     if send_btn:
-        senti = analyze_sentiment(user_text)
-        steps = coach_plan(slot, tone)
+        with st.spinner("Coaching…"):
+            s = get_sentiment(user_text)
+            ai = generate_ai_coach_reply(user_text, slot, tone)
+            sentiment_label, sentiment_score = s["label"], s["score"]
+            plan, mantra = ai["plan"], ai["mantra"]
 
-        m1, m2, m3 = st.columns(3)
-        with m1: render_metric("Sentiment", f"{senti['badge']} {senti['label']}")
-        with m2: render_metric("Score", f"{senti['score']:.2f}")
-        with m3: render_metric("Tonalité", tone.capitalize())
+            log_row = {
+                "ts": datetime.utcnow().isoformat(),
+                "slot": slot,
+                "user_text": user_text,
+                "tone": tone,
+                "sentiment": sentiment_label,
+                "score": sentiment_score,
+                "plan": plan,
+                "mantra": mantra,
+            }
+            save_log(log_row)
 
-        st.markdown("##### Plan (3 étapes)")
-        st.markdown(
-            "<ol class='steps'>" + "".join([f"<li>{s}</li>" for s in steps]) + "</ol>",
-            unsafe_allow_html=True,
-        )
+    # Metrics area
+    m1, m2 = st.columns(2)
+    with m1:
+        klass = "metric-good" if sentiment_score >= 0.15 else ("metric-bad" if sentiment_score <= -0.15 else "muted")
+        st.markdown(f"**Sentiment:** <span class='{klass}'>{sentiment_label} ({sentiment_score:.2f})</span>", unsafe_allow_html=True)
+    with m2:
+        if mantra:
+            st.markdown(f"**Mantra:** _{mantra}_")
+        else:
+            st.markdown("**Mantra:** —")
 
-        add_to_journal(slot, user_text, senti, steps)
+    st.markdown("###### Coach plan")
+    st.write(plan if plan else "Your plan will appear here after **Send reply**")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    elif clear_btn:
-        st.session_state.journal = st.session_state.journal.iloc[0:0]
-        st.info("Journal vidé.")
+# === Right: Timer + Dashboard
+with col_right:
+    st.markdown('<div class="glass">', unsafe_allow_html=True)
+    st.subheader("Focus timer", divider="blue")
+
+    dur = st.slider("Duration (minutes)", 5, 45, 10, 5)
+    colA, colB = st.columns(2)
+    with colA:
+        if not st.session_state.timer_running and st.button("Start"):
+            st.session_state.timer_running = True
+            st.session_state.timer_end = datetime.utcnow() + timedelta(minutes=dur)
+        if st.session_state.timer_running and st.button("Stop"):
+            st.session_state.timer_running = False
+            st.session_state.timer_end = None
+    with colB:
+        if st.session_state.timer_running:
+            remaining = (st.session_state.timer_end - datetime.utcnow()).total_seconds()
+            if remaining <= 0:
+                st.session_state.timer_running = False
+                st.session_state.timer_end = None
+                st.success("⏰ Time’s up! Great job.")
+            else:
+                mins = int(remaining // 60)
+                secs = int(remaining % 60)
+                st.metric("Remaining", f"{mins:02d}:{secs:02d}")
+
+                # Tiny live update
+                time.sleep(0.6)
+                st.experimental_rerun()
+        else:
+            st.caption("Timer is idle.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="glass" style="margin-top:16px;">', unsafe_allow_html=True)
+    st.subheader("Progress dashboard", divider="blue")
+    df = read_logs()
+    if df.empty:
+        st.caption("No entries yet — send a reply to start logging.")
     else:
-        st.caption("Écris ton message puis clique sur *Proposer un plan*.")
+        df["ts"] = pd.to_datetime(df["ts"])
+        df_plot = df.sort_values("ts")
+        # Sentiment line
+        chart = alt.Chart(df_plot).mark_line(point=True).encode(
+            x=alt.X("ts:T", title="Time"),
+            y=alt.Y("score:Q", title="Sentiment (VADER)"),
+            color=alt.value("#22d3ee")
+        ).properties(height=220)
+        st.altair_chart(chart, use_container_width=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        # Recent logs
+        st.markdown("##### Recent log")
+        show = df_plot.tail(6)[["ts","slot","sentiment","score","mantra"]]
+        show.columns = ["Time", "Slot", "Sentiment", "Score", "Mantra"]
+        st.dataframe(show, use_container_width=True, hide_index=True)
 
-# --- Journal -----------------------------------------------------------------------
-st.markdown("<br/>", unsafe_allow_html=True)
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.subheader("📜 Journal")
-if len(st.session_state.journal):
-    st.dataframe(
-        st.session_state.journal.sort_values("timestamp", ascending=False),
-        use_container_width=True,
-        hide_index=True,
-    )
-    csv = st.session_state.journal.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Export CSV", csv, "dailyup_journal.csv", "text/csv")
-else:
-    st.caption("Ton journal est vide pour l’instant.")
-st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown(
-    "<div style='text-align:center;color:var(--muted);padding:10px 0;opacity:.9'>"
-    "Built with 💙 Streamlit • DailyUp"
-    "</div>",
-    unsafe_allow_html=True,
-)
+# Footer note
+st.caption("Built with ❤️ • DailyUp")
