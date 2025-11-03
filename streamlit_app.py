@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 
-# Assure la dispo du lexique VADER sur Streamlit Cloud
+# Ensure VADER lexicon on Streamlit Cloud
 try:
     nltk.data.find("sentiment/vader_lexicon.zip")
 except LookupError:
@@ -32,21 +32,21 @@ st.set_page_config(
 )
 
 # ────────────────────────────────────────────────────────────────────────────────
-# THEME CLAIR/SOMBRE + CONTRASTES ROBUSTES
+# THEME (LIGHT/DARK) + STRONG CONTRASTS
 # ────────────────────────────────────────────────────────────────────────────────
 CSS = """
 :root{
-  --ink: #111827;              /* texte principal (clair) */
-  --muted: #4b5563;            /* texte secondaire (clair) */
-  --bg: #f6f8ff;               /* fond clair */
-  --card: #ffffff;             /* cartes */
-  --border: #e6e8f2;           /* bordures */
+  --ink: #111827;              /* main text (light) */
+  --muted: #4b5563;            /* secondary text (light) */
+  --bg: #f6f8ff;               /* light background */
+  --card: #ffffff;             /* cards */
+  --border: #e6e8f2;           /* borders */
   --primaryGrad: linear-gradient(135deg,#7c3aed 0%, #ec4899 55%, #06b6d4 100%);
   --accentGrad: linear-gradient(135deg,#22c55e 0%, #06b6d4 50%, #818cf8 100%);
   --shadow: 0 14px 30px rgba(15,23,42,.08);
 }
 
-/* Mode sombre : variables adaptées */
+/* Dark mode */
 @media (prefers-color-scheme: dark){
   :root{
     --ink: #f2f4ff;
@@ -83,6 +83,43 @@ h3{font-weight: 700;}
   padding: 8px 10px 2px 10px;
 }
 
+/* ───── Quote-of-the-Day banner (TOP) ───── */
+.banner{
+  position: relative;
+  margin: 6px 0 20px 0;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.banner:before{
+  content: "";
+  position: absolute; inset: -2px;
+  border-radius: 20px;
+  background: var(--primaryGrad);
+  filter: blur(22px);
+  opacity: .18;
+  z-index: 0;
+}
+.banner .b-quote{
+  position: relative;
+  z-index: 1;
+  font-size: 1.08rem;
+  line-height: 1.6rem;
+  font-style: italic;
+}
+.banner .b-author{
+  position: relative;
+  z-index: 1;
+  margin-top: 6px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+/* hero */
 .hero{
   position: relative;
   overflow: hidden;
@@ -92,7 +129,6 @@ h3{font-weight: 700;}
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
 }
-
 .hero .title{
   background: var(--primaryGrad);
   -webkit-background-clip: text;
@@ -102,7 +138,6 @@ h3{font-weight: 700;}
   font-size: 2.2rem;
   margin: 2px 0 8px 0;
 }
-
 .hero .pill{
   display:inline-flex; gap:8px; align-items:center;
   background: #eef2ff; color: #3730a3;
@@ -113,7 +148,6 @@ h3{font-weight: 700;}
 @media (prefers-color-scheme: dark){
   .hero .pill{ background:#1f2541; color:#c7d2fe; border-color:#2a3156; }
 }
-
 .hero .shapes{
   position:absolute; inset: -40px -40px auto auto;
   width: 280px; height: 280px; pointer-events:none;
@@ -142,7 +176,7 @@ h3{font-weight: 700;}
 }
 .card h3{ margin-top:6px; }
 
-/* quote card */
+/* small quote card (Step 1) */
 .qcard{
   background: var(--card);
   border: 1px solid var(--border);
@@ -240,10 +274,10 @@ ul.plan li{
   ul.plan li{ background:#0f1429; border-color:#252b43; }
 }
 
-/* moment highlight card (contraste renforcé) */
+/* moment highlight card (stronger contrast) */
 .moment{
   border-radius: 16px; padding: 16px 18px; color:#0b1020;
-  border:1px solid var(--border); box-shadow: var(--shadow);
+  border:1px solid var(--border); box-shadow:var(--shadow);
 }
 .morning{ background: linear-gradient(135deg,#fff1f9 0%,#e6edff 100%); }
 .midday{  background: linear-gradient(135deg,#e7fff8 0%,#ebf2ff 100%); }
@@ -263,10 +297,10 @@ ul.plan li{
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 # ────────────────────────────────────────────────────────────────────────────────
-# OUTILS GÉNÉRAUX
+# UTILITIES
 # ────────────────────────────────────────────────────────────────────────────────
 def ai_is_available() -> bool:
-    """True si la clé OPENAI_API_KEY est présente et que le SDK se charge."""
+    """True if OPENAI_API_KEY exists and SDK loads."""
     if not os.getenv("OPENAI_API_KEY"):
         return False
     try:
@@ -276,7 +310,7 @@ def ai_is_available() -> bool:
         return False
 
 def _format_steps(items) -> str:
-    """Retourne une <ul> sûre. Accepte str ou list[str]."""
+    """Return a safe <ul>. Accepts str or list[str]."""
     if not items:
         items = []
     if isinstance(items, str):
@@ -286,7 +320,26 @@ def _format_steps(items) -> str:
     return f'<ul class="plan">{lis}</ul>'
 
 # ────────────────────────────────────────────────────────────────────────────────
-# BANQUE DE QUOTES (par moment) + sélection du jour
+# BIG QUOTE-OF-THE-DAY (TOP banner, scientific/inspirational)
+# ────────────────────────────────────────────────────────────────────────────────
+BIG_QUOTES = [
+    # (title, text, author)
+    ("Two-Minute Rule", "If it takes less than two minutes, do it now. Tiny wins spark momentum and make action easier next time.", "James Clear (Atomic Habits)"),
+    ("Self-Determination Theory", "Sustainable motivation grows from autonomy, competence, and relatedness. Create a sense of mastery and connection.", "Deci & Ryan (2000)"),
+    ("Pygmalion Effect", "High expectations change behavior and results. Believe you can improve—your brain follows your focus.", "Rosenthal & Jacobson (1968)"),
+    ("Small Wins", "Celebrate micro-progress: each step links effort to satisfaction and builds a virtuous circle of motivation.", "Teresa Amabile (Harvard)"),
+    ("Fresh Start Effect", "Temporal landmarks (Mondays, first of the month, birthdays) boost the urge to start clean and commit.", "Dai, Milkman & Riis (2014)"),
+]
+
+def big_quote_of_the_day() -> Dict[str, str]:
+    """Deterministic daily pick so all users see the same banner each day."""
+    seed = f"{date.today().isoformat()}::banner"
+    idx = int(hashlib.sha256(seed.encode()).hexdigest(), 16) % len(BIG_QUOTES)
+    title, text, author = BIG_QUOTES[idx]
+    return {"title": title, "text": text, "author": author}
+
+# ────────────────────────────────────────────────────────────────────────────────
+# QUOTES BY MOMENT (small card in Step 1)
 # ────────────────────────────────────────────────────────────────────────────────
 QUOTES = {
     "morning": [
@@ -310,10 +363,7 @@ QUOTES = {
 }
 
 def quote_of_the_day(moment: str) -> Dict[str, str]:
-    """
-    Retourne toujours la même quote pour une combinaison (jour, moment)
-    afin de rester cohérent sur la journée.
-    """
+    """Stable quote for (day, moment)."""
     pool = QUOTES.get(moment, QUOTES["morning"])
     seed_str = f"{date.today().isoformat()}::{moment}"
     idx = int(hashlib.sha256(seed_str.encode()).hexdigest(), 16) % len(pool)
@@ -321,13 +371,13 @@ def quote_of_the_day(moment: str) -> Dict[str, str]:
     return {"text": text, "author": author}
 
 # ────────────────────────────────────────────────────────────────────────────────
-# COACH FALLBACK (sans IA)
+# FALLBACK COACH (no AI)
 # ────────────────────────────────────────────────────────────────────────────────
 def fallback_coach(note: str, slot: str) -> Dict:
     t = note.lower()
     if any(w in t for w in ["exam", "examen", "test", "quiz"]):
         return {
-            "analysis": "Exam vibes: clarity + quick activation + active recall.",
+            "analysis": "Exam context: clarity + quick activation + active recall.",
             "plan": [
                 "Pick 1 sub-topic (write it).",
                 "One 25′ Pomodoro: active read + recall.",
@@ -336,9 +386,9 @@ def fallback_coach(note: str, slot: str) -> Dict:
             "mantra": "Small wins compound",
             "source": "fallback"
         }
-    if any(w in t for w in ["stress", "stressed", "anxious", "anxiété"]):
+    if any(w in t for w in ["stress", "stressed", "anxious", "anxiety"]):
         return {
-            "analysis": "Stress detected: lower mental load and start tiny.",
+            "analysis": "Stress detected: reduce mental load and start tiny.",
             "plan": [
                 "2′ brain-dump: list all. Circle 1 doable item.",
                 "Set a 10′ timer and do just the first micro-step.",
@@ -370,7 +420,7 @@ def fallback_coach(note: str, slot: str) -> Dict:
     }
 
 # ────────────────────────────────────────────────────────────────────────────────
-# COACH OPENAI (si clé dispo)
+# OPENAI COACH (if key available)
 # ────────────────────────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are DailyUp, a tiny motivational coach.
 Return only compact JSON with:
@@ -426,7 +476,7 @@ Example:
         return {"error": str(e)}
 
 # ────────────────────────────────────────────────────────────────────────────────
-# SENTIMENT → RADAR (6 facteurs)
+# SENTIMENT → RADAR (6 factors)
 # ────────────────────────────────────────────────────────────────────────────────
 SIA = SentimentIntensityAnalyzer()
 
@@ -434,7 +484,7 @@ KEYS = {
     "sad": {"sad", "sadness", "depressed", "down", "cry", "unhappy", "low"},
     "anx": {"anxious", "anxiety", "nervous", "worried", "panic", "stressed"},
     "mot": {"motivation", "motivated", "drive", "excited", "inspired", "eager"},
-    "focus": {"focus", "concentrate", "study", "deep work", "locked in", "attention"},
+    "focus": {"focus", "concentrate", "study", "deep", "locked", "attention"},
     "tired": {"tired", "exhausted", "fatigued", "sleepy", "drained"},
 }
 
@@ -443,13 +493,10 @@ def _density(note: str, vocab: set) -> float:
     if not t:
         return 0.0
     count = sum(1 for w in t if w in vocab)
-    return min(1.0, count / max(4, len(t)/6))   # densité souple
+    return min(1.0, count / max(4, len(t)/6))   # soft density
 
 def sentiment_radar(note: str) -> Dict[str, float]:
-    """
-    Retourne 6 axes normalisés (0..1) basés sur VADER + mots-clés :
-      Positive, Negative, Sadness, Anxiety, Motivation, Focus
-    """
+    """Six normalized axes (0..1) based on VADER + keywords."""
     vs = SIA.polarity_scores(note or "")
     pos = vs["pos"]
     neg = vs["neg"]
@@ -460,11 +507,10 @@ def sentiment_radar(note: str) -> Dict[str, float]:
     mot = _density(note, KEYS["mot"])
     foc = _density(note, KEYS["focus"])
 
-    # Ajustements doux avec le compound
     positive = min(1.0, pos + max(0.0, comp) * 0.5)
     negative = min(1.0, neg + max(0.0, -comp) * 0.5)
-    sadness = min(1.0, sad + neg * 0.3)
-    anxiety = min(1.0, anx + neg * 0.2)
+    sadness  = min(1.0, sad + neg * 0.3)
+    anxiety  = min(1.0, anx + neg * 0.2)
     motivation = min(1.0, max(mot, pos * 0.6 + max(0, comp) * 0.3))
     focus = min(1.0, max(foc, pos * 0.3 + (1 - neg) * 0.2))
 
@@ -505,9 +551,23 @@ def radar_chart(scores: Dict[str, float]) -> go.Figure:
     return fig
 
 # ────────────────────────────────────────────────────────────────────────────────
-# UI — INTRO MOTIVANTE
+# UI — CONTAINER
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="container">', unsafe_allow_html=True)
+
+# TOP BANNER: Quote of the Day (scientific/inspirational)
+bq = big_quote_of_the_day()
+st.markdown(
+    f"""
+<div class="banner">
+  <div class="b-quote">“{html.escape(bq['text'])}”</div>
+  <div class="b-author">— {html.escape(bq['author'])} · <span style="opacity:.8">{html.escape(bq['title'])}</span></div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+# HERO (unchanged)
 st.markdown(
     """
 <div class="hero">
@@ -529,7 +589,7 @@ st.markdown(
 )
 
 # ────────────────────────────────────────────────────────────────────────────────
-# STEP 1 — MOMENT + VISUEL + QUOTE OF THE DAY
+# STEP 1 — MOMENT + VISUAL + SMALL QUOTE
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 1 — Pick your moment")
@@ -584,7 +644,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# QUOTE OF THE DAY (dépend du moment)
+# Small quote card (depends on moment)
 q = quote_of_the_day(slot)
 st.markdown(
     f"""
@@ -604,7 +664,7 @@ NUDGES = {
 st.caption(f"Prompt used by the coach: {NUDGES[slot]}")
 
 # ────────────────────────────────────────────────────────────────────────────────
-# STEP 2 — NOTE UTILISATEUR + RADAR IMMÉDIAT
+# STEP 2 — USER NOTE + LIVE RADAR
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 2 — Tell me your note")
@@ -630,7 +690,7 @@ with c2:
         st.experimental_rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Radar live (si on a du texte)
+# Live radar
 if (user_note or "").strip():
     st.markdown("#### Mood radar")
     scores = sentiment_radar(user_note)
@@ -668,7 +728,6 @@ if go:
             )
             result = fallback_coach(user_note, slot)
 
-        # Rendu
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.success("✅ Your personalized plan is ready!", icon="✅")
         st.markdown("### Analysis")
@@ -682,7 +741,6 @@ if go:
         st.caption(f"Source: {result.get('source','n/a')}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Debug + trace
         with st.expander("Debug (optional)"):
             st.json(
                 {
