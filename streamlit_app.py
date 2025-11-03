@@ -1,291 +1,313 @@
-# =========================================================
-# DAILYUP – SMART AI COACH APP (Streamlit + OpenAI)
-# =========================================================
-# ✅ Verticale
-# ✅ Design moderne
-# ✅ Texte explicatif clair
-# ✅ Analyse IA (GPT-4o-mini) avec créativité ajustable
-# ✅ Fallback intelligent si IA hors-ligne
-# =========================================================
+# streamlit_app.py
+# DailyUp – micro-coach vertical avec IA (créativité 100%) + fallback
+# UI en anglais (clair, vertical, explicite). Commentaires en français.
 
-import streamlit as st
-import re
-import json
-import random
 import os
-from datetime import datetime
+import json
 from typing import Dict, List
-import pandas as pd
+import streamlit as st
 from openai import OpenAI
 
-# ---------- CONFIG STREAMLIT ----------
-st.set_page_config(
-    page_title="🌈 DailyUp — AI Coach",
-    page_icon="🌈",
-    layout="centered"
-)
+# ======================
+#   STYLES & THEME
+# ======================
+PRIMARY_BG = "#0B1220"      # fond cartes/focus
+PRIMARY_TX = "#E6F0FF"
+ACCENT_1   = "#7C3AED"      # violet
+ACCENT_2   = "#22D3EE"      # cyan
+OK_BG      = "#ECFDF5"
+OK_TX      = "#065F46"
+WARN_BG    = "#EEF2FF"
+WARN_TX    = "#3730A3"
 
-# ---------- STYLE ----------
-st.markdown("""
+CUSTOM_CSS = f"""
 <style>
-    body, .main {
-        background: linear-gradient(180deg, #0d1117, #141c2f);
-        color: #f8f9fa;
-        font-family: 'Inter', sans-serif;
-    }
-    h1, h2, h3 { color: white; font-weight: 800; }
-    .intro {
-        background-color: #ffffff;
-        color: #111827;
-        border-radius: 15px;
-        padding: 20px;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-    }
-    .section {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 15px;
-        padding: 20px;
-        margin-top: 20px;
-        color: #f1f5f9;
-    }
-    .stButton > button {
-        background: linear-gradient(90deg, #7c3aed, #22d3ee);
-        border: none;
-        color: white;
+    .app-title {{
+        font-weight: 800; 
+        font-size: 2.2rem; 
+        letter-spacing: .3px;
+        margin-bottom: .125rem;
+    }}
+    .badge-live {{
+        padding: .25rem .6rem; 
+        border-radius: 999px; 
+        font-size: .8rem; 
+        background: linear-gradient(90deg, {ACCENT_1}, {ACCENT_2});
+        color: white; 
+        display: inline-block;
+        margin-left: .5rem;
+    }}
+    .lead {{
+        color: #6B7280; 
+        margin-bottom: 1.25rem;
+    }}
+    .soft-card {{
+        background: white;
+        border-radius: 16px;
+        border: 1px solid rgba(12, 25, 55, .08);
+        padding: 18px 16px;
+        box-shadow: 0 12px 24px rgba(15, 23, 42, .06);
+        margin-bottom: 14px;
+    }}
+    .soft-input textarea {{
+        background: {PRIMARY_BG};
+        color: {PRIMARY_TX};
+        border-radius: 12px !important;
+        border: 1px solid rgba(255,255,255,.07) !important;
+    }}
+    .soft-input .stTextInput>div>div>input {{
+        background: {PRIMARY_BG};
+        color: {PRIMARY_TX};
+        border-radius: 12px !important;
+        border: 1px solid rgba(255,255,255,.07) !important;
+    }}
+    .pill {{
+        height: 10px;
+        border-radius: 999px;
+        background: {PRIMARY_BG};
+        box-shadow: 0 16px 40px rgba(12,18,32,.25);
+        margin: 12px 0 18px 0;
+    }}
+    .btn-grad button {{
+        background: linear-gradient(90deg, {ACCENT_1}, {ACCENT_2}) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        height: 46px;
         font-weight: 700;
-        border-radius: 10px;
-        padding: 0.6rem 1rem;
-        transition: 0.2s;
-    }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        filter: brightness(1.1);
-    }
-    .success {
-        color: #10b981;
-        font-weight: bold;
-    }
-    .error {
-        color: #ef4444;
-        font-weight: bold;
-    }
+    }}
+    .note-ok {{
+        background: {OK_BG};
+        color: {OK_TX};
+        padding: 12px 14px; 
+        border-radius: 12px; 
+        border:1px solid rgba(16,185,129,.25);
+        font-weight: 600;
+    }}
+    .note-warn {{
+        background: {WARN_BG};
+        color: {WARN_TX};
+        padding: 12px 14px; 
+        border-radius: 12px; 
+        border:1px solid rgba(55,48,163,.18);
+        font-weight: 600;
+    }}
+    .section-title {{
+        font-size: 1.15rem; 
+        font-weight: 800; 
+        margin-bottom: .25rem;
+    }}
+    .helper {{
+        color: #8A94A7; 
+        margin-bottom: .5rem;
+        font-size: 0.92rem;
+    }}
 </style>
-""", unsafe_allow_html=True)
-
-
-# ---------- INITIALISATION ----------
-if "logs" not in st.session_state:
-    st.session_state.logs = []
-
-
-# ---------- CLIENT OPENAI ----------
-def openai_client():
-    key = os.getenv("OPENAI_API_KEY", "") or st.secrets.get("OPENAI_API_KEY", "")
-    if not key:
-        return None
-    return OpenAI(api_key=key)
-
-
-# ---------- HISTORIQUE ----------
-def append_log(entry: Dict):
-    st.session_state.logs.append(entry)
-
-
-def get_last_plan() -> List[str]:
-    """Récupère le dernier plan pour éviter les répétitions."""
-    if not st.session_state.logs:
-        return []
-    last = st.session_state.logs[-1]
-    plan = str(last.get("plan", ""))
-    return [s.strip("-• ").strip() for s in plan.splitlines() if s.strip()]
-
-
-# ---------- IA PRINCIPALE ----------
-def ask_llm(user_text: str, slot: str, temperature: float = 0.5) -> Dict[str, str]:
-    client = openai_client()
-    if not client:
-        raise RuntimeError("Aucune clé OpenAI trouvée.")
-
-    last_steps = get_last_plan()
-
-    system = (
-        "You are DailyUp, a concise micro-coach. "
-        "Be practical, grounded, positive and short. "
-        "Avoid repeating previous steps."
-    )
-
-    prompt = f"""
-Return STRICT JSON with keys: analysis, plan_steps (array of 3), mantra.
-User note: {user_text}
-Time: {slot}
-Rules:
-- analysis: 1–2 short sentences based on the note.
-- plan_steps: exactly 3 tiny actionable steps, start with a verb, <= 12 words.
-- Avoid repeating these previous steps: {last_steps}.
-- mantra: 3–5 words, no quotes.
-Respond ONLY with JSON.
 """
+st.set_page_config(page_title="DailyUp — micro coach", page_icon="🌞", layout="centered")
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=temperature,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt}
+# ======================
+#   PROMPTS / MODELS
+# ======================
+SLOT_PROMPTS = {
+    "morning":  "Morning Boost — one small step beats zero.",
+    "midday":   "Midday Check-in — keep momentum with a tiny action.",
+    "evening":  "Evening Wind-down — reflect, lighten, and set tomorrow’s first step.",
+}
+
+def fallback_plan(note: str, slot: str) -> Dict:
+    """Plan de secours si l'API est indisponible : contextualisé (exam/stress)."""
+    text = (note or "").lower()
+    steps: List[str] = []
+    analysis = "Focus on one small, concrete action."
+
+    if any(k in text for k in ["exam", "exams", "test", "final", "revision", "révision"]):
+        analysis = "Exam context: reduce anxiety with time-boxed, active recall."
+        steps = [
+            "Pick 1 weak topic now",
+            "Pomodoro 25 minutes",
+            "Create 3 flashcards + review",
         ]
-    )
+        mantra = "Small wins compound"
+    elif any(k in text for k in ["stress", "stressed", "anxious", "anxiety"]):
+        analysis = "Stress context: down-regulate, then a tiny step."
+        steps = [
+            "Breathe 4-7-8 for 60s",
+            "Define one 5-min task",
+            "Do it for 5 minutes",
+        ]
+        mantra = "Begin before you think"
+    else:
+        steps = [
+            "Define a 10-min tiny step",
+            "Remove one distraction",
+            "Start a 5-minute timer",
+        ]
+        mantra = "Action cures fear"
 
-    txt = res.choices[0].message.content.strip()
-    match = re.search(r"\{.*\}", txt, re.S)
-    if not match:
-        return {
-            "analysis": txt[:200],
-            "plan_steps": [
-                "Clarify one tiny goal",
-                "Work 10 focused minutes",
-                "Remove one distraction"
-            ],
-            "mantra": "Small wins compound"
-        }
+    if slot == "evening":
+        steps[-1] = "Set a 5-min starter for tomorrow"
+        mantra = "Leave it lighter"
+
+    return {"analysis": analysis, "steps": steps[:3], "mantra": mantra, "from_ai": False}
+
+
+def compose_coach_response(note: str, slot: str, tone: str) -> Dict:
+    """
+    Utilise GPT-4o-mini avec créativité = 1.0 (fixe) pour une réponse JSON.
+    Fallback contextuel si erreur / API absente.
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return fallback_plan(note, slot)
 
     try:
-        data = json.loads(match.group(0))
-        return {
-            "analysis": data.get("analysis", ""),
-            "plan_steps": data.get("plan_steps", []),
-            "mantra": data.get("mantra", "Begin before you think")
-        }
-    except Exception:
-        return {
-            "analysis": txt[:200],
-            "plan_steps": [
-                "Define one small goal",
-                "Set a 10-min timer",
-                "Focus and start"
+        client = OpenAI(api_key=api_key)
+
+        system_msg = (
+            "You are a behavioral micro-coach. Be concise, practical and contextual. "
+            "If exams/revisions are mentioned, prefer Pomodoro, active recall, flashcards. "
+            "If stress/anxiety appears, add a brief down-regulation then a tiny action. "
+            "Return JSON ONLY with: analysis (<=1 short sentence), "
+            "steps (exactly 3 imperatives, <=12 words each), mantra (3-6 words)."
+        )
+        user_msg = (
+            f"Time of day: {slot}\n"
+            f"Coach tone: {tone}\n"
+            f"User note: {note}\n"
+            "Return JSON with keys: analysis, steps, mantra."
+        )
+
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=1.0,                 # créativité fixée à 100%
+            max_tokens=300,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
             ],
-            "mantra": "Begin before you think"
-        }
+        )
+        content = resp.choices[0].message.content
+        data = json.loads(content)
 
+        data["steps"] = (data.get("steps") or [])[:3]
+        while len(data["steps"]) < 3:
+            data["steps"].append("Take one tiny step")
 
-# ---------- FALLBACK ----------
-def smart_fallback(user_text: str, slot: str) -> Dict[str, str]:
-    words = re.findall(r"[a-zA-Z]{4,}", user_text.lower())
-    topic = ", ".join(words[:2]) if words else "your task"
-    openings = {
-        "morning": ["Morning Boost", "Start Fresh"],
-        "midday": ["Midday Focus", "Tiny Reset"],
-        "evening": ["Evening Wrap", "Gentle Close"],
-    }
-    intro = random.choice(openings.get(slot, ["Small Step"]))
-    steps = random.sample([
-        f"Define a 10-min goal about {topic}",
-        "Write one sentence",
-        "Turn off notifications",
-        "Prepare tomorrow’s small win",
-        "Commit to just 5 minutes",
-        "Breathe, then start small"
-    ], k=3)
-    mantras = ["Action cures doubt", "Small wins compound", "Momentum over mood"]
-    return {
-        "analysis": f"{intro}: focus on something small and clear.",
-        "plan_steps": steps,
-        "mantra": random.choice(mantras)
-    }
+        data["analysis"] = (data.get("analysis") or "").strip()
+        data["mantra"] = (data.get("mantra") or "Small wins compound").strip()
+        data["from_ai"] = True
+        return data
 
+    except Exception as e:
+        st.session_state["ai_error"] = str(e)
+        return fallback_plan(note, slot)
 
-# =========================================================
-# 🚀 INTERFACE UTILISATEUR
-# =========================================================
+# ======================
+#   UI — VERTICAL
+# ======================
 
-st.markdown("<h1>🌈 DailyUp — AI Coach</h1>", unsafe_allow_html=True)
+# En-tête
+col1, col2 = st.columns([1, .001])
+with col1:
+    st.markdown('<div class="app-title">DailyUp</div>', unsafe_allow_html=True)
+    st.caption("Tiny nudges, big progress.")
+with col2:
+    st.markdown(f'<div class="badge-live">Live Coach</div>', unsafe_allow_html=True)
 
-st.markdown("""
-<div class="intro">
-<h3>How to use DailyUp</h3>
-<p>🕓 1️⃣ Select your moment (morning, midday, evening).<br>
-💭 2️⃣ Write what’s on your mind (your goal, blocker or feeling).<br>
-⚙️ 3️⃣ Click <b>Analyze & coach me</b> to get a personalized plan from AI.<br>
-🚀 4️⃣ Optionally start a focus timer and track your progress below.</p>
+st.markdown(
+    """
+<div class="soft-card">
+  <div style="font-weight:700;margin-bottom:.35rem;">How to use the app</div>
+  <div class="helper">
+  1) Pick your moment and tone. 2) Write one sentence about your goal or how you feel.  
+  3) Tap “Analyze & coach me” → you’ll get a tailored 3-step micro-plan + a short mantra.  
+  If the AI is unavailable, a smart local fallback is used.
+  </div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+st.markdown('<div class="pill"></div>', unsafe_allow_html=True)
+
+# Step 1 — moment & tone
+st.markdown('<div class="section-title">Step 1 — Choose your moment & tone</div>', unsafe_allow_html=True)
+st.markdown('<div class="helper">This sets the prompt and the coach vibe.</div>', unsafe_allow_html=True)
+
+slot = st.radio(
+    "Moment",
+    options=["morning", "midday", "evening"],
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed",
+)
+
+tone = st.selectbox(
+    "Tone",
+    options=["neutral", "supportive", "direct", "playful"],
+    index=1,
+    help="Pick the vibe you want from the coach.",
+)
+
+st.markdown(f"""
+<div class="soft-card">
+<strong>Prompt:</strong> {SLOT_PROMPTS.get(slot, '')}
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown('<div class="pill"></div>', unsafe_allow_html=True)
 
-# ---------- Étape 1 ----------
-st.markdown('<div class="section">', unsafe_allow_html=True)
-st.subheader("Step 1 — Pick your moment")
-slot = st.segmented_control("Time window", ["morning", "midday", "evening"], default="morning")
-st.session_state.slot = slot
-st.markdown('</div>', unsafe_allow_html=True)
+# Step 2 — note utilisateur
+st.markdown('<div class="section-title">Step 2 — Tell me what’s on your mind</div>', unsafe_allow_html=True)
+st.markdown('<div class="helper">One sentence is enough: “I’m stressed for my exam”, “I need to finish my report”, etc.</div>', unsafe_allow_html=True)
 
-
-# ---------- Étape 2 ----------
-st.markdown('<div class="section">', unsafe_allow_html=True)
-st.subheader("Step 2 — Write what’s on your mind")
-examples = {
-    "morning": "Example: I want to start my report calmly.",
-    "midday": "Example: I feel stuck; need to refocus.",
-    "evening": "Example: I’d like to wrap the day peacefully."
-}
-user_text = st.text_area(
-    "Your note:",
-    placeholder=examples[slot],
-    height=120
+note = st.text_area(
+    label="Your note",
+    value="",
+    placeholder="Type how you feel or your main goal for today…",
+    height=120,
+    label_visibility="collapsed",
 )
-st.session_state.user_text = user_text
-st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('<div class="pill"></div>', unsafe_allow_html=True)
 
+# Step 3 — analyse & plan (IA 100%)
+st.markdown('<div class="section-title">Step 3 — Analyze & coach me</div>', unsafe_allow_html=True)
+st.markdown('<div class="helper">AI will analyze your note and propose 3 micro-actions and a short mantra.</div>', unsafe_allow_html=True)
 
-# ---------- Étape 3 ----------
-st.markdown('<div class="section">', unsafe_allow_html=True)
-st.subheader("Step 3 — Analyze & coach me")
-st.caption("AI will analyze your note, propose 3 micro-actions and a short mantra.")
+clicked = st.container()
+with clicked:
+    col = st.container()
+    with col:
+        c1, = st.columns(1)
+        with c1:
+            analyze = st.button("💬 Analyze & coach me", use_container_width=True, type="primary", key="analyze", help="Uses GPT-4o-mini when available.",)
+            st.markdown('<div class="btn-grad"></div>', unsafe_allow_html=True)
 
-temp = st.slider("AI creativity", 0.0, 1.0, 0.5, 0.1,
-                 help="Lower = focused, Higher = more varied")
-
-if st.button("💬 Analyze & coach me", use_container_width=True):
-    if not user_text.strip():
-        st.warning("✏️ Please write something first.")
+if analyze:
+    if not note.strip():
+        st.warning("Please write a quick note in Step 2 first.")
     else:
-        with st.spinner("🤔 Thinking..."):
-            try:
-                output = ask_llm(user_text, slot, temperature=temp)
-            except Exception:
-                output = smart_fallback(user_text, slot)
+        with st.spinner("Thinking..."):
+            out = compose_coach_response(note=note.strip(), slot=slot, tone=tone)
 
-        analysis = output["analysis"]
-        steps = output["plan_steps"]
-        mantra = output["mantra"]
+        if out.get("from_ai"):
+            st.markdown(f'<div class="note-ok">✅ Your personalized plan is ready (AI).</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="note-warn">⚠️ Network/API issue — using smart fallback.</div>', unsafe_allow_html=True)
 
-        st.success("✅ Your personalized plan is ready!")
-        st.write(f"**Analysis:** {analysis}")
-        st.write("**3-Step Plan:**")
-        for i, s in enumerate(steps, 1):
-            st.write(f"{i}. {s}")
-        st.caption(f"**Mantra:** _{mantra}_")
+        st.markdown("### Analysis")
+        st.write(out["analysis"])
 
-        append_log({
-            "timestamp": datetime.utcnow().isoformat(),
-            "slot": slot,
-            "note": user_text,
-            "analysis": analysis,
-            "plan": "\n".join(steps),
-            "mantra": mantra
-        })
-st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("### 3-Step Plan")
+        for i, step in enumerate(out["steps"], 1):
+            st.markdown(f"{i}. {step}")
 
+        st.markdown("### Mantra")
+        st.write(out["mantra"])
 
-# ---------- Étape 4 ----------
-st.markdown('<div class="section">', unsafe_allow_html=True)
-st.subheader("Step 4 — Progress log")
-if st.session_state.logs:
-    df = pd.DataFrame(st.session_state.logs)
-    st.dataframe(df.tail(5)[["timestamp", "slot", "mantra"]],
-                 hide_index=True, use_container_width=True)
-else:
-    st.caption("No entries yet. Write something above to start!")
-st.markdown('</div>', unsafe_allow_html=True)
-
-
-st.markdown("<br><center>💫 Built with ❤️ by DailyUp</center>", unsafe_allow_html=True)
+        # Optionnel : afficher l’erreur IA si présente (debug discret)
+        if "ai_error" in st.session_state:
+            with st.expander("Debug (AI error)"):
+                st.code(st.session_state["ai_error"])
