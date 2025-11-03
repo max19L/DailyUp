@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import re
+import html
 from datetime import datetime
 from typing import Dict, List
 
@@ -120,7 +121,7 @@ textarea, .stTextArea textarea{
   border: 1px solid #e6e8f2 !important; border-radius: 14px !important;
 }
 
-/* radio to pills */
+/* radio -> pills */
 div[role="radiogroup"] > label{
   display:inline-flex; align-items:center; gap:8px;
   margin:6px 10px 6px 0; cursor:pointer;
@@ -165,6 +166,17 @@ ul.plan li{
   margin:8px 0; padding:9px 12px; border-radius:12px;
   border:1px solid #e8ebf6; background:#fbfdff;
 }
+
+/* moment highlight card */
+.moment{
+  border-radius: 16px; padding: 14px 16px; color:#0b1020;
+  border:1px solid #e6e8f2; box-shadow: var(--shadow);
+}
+.morning{ background: linear-gradient(135deg,#fdf2ff 0%,#e0e7ff 100%); }
+.midday{  background: linear-gradient(135deg,#eafffb 0%,#ecf4ff 100%); }
+.evening{ background: linear-gradient(135deg,#fff1f2 0%,#f1e6ff 100%); }
+.moment h4{ margin:6px 0 4px 0; font-weight:900;}
+.moment p{ margin:2px 0 0 0; color:#334155;}
 """
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
@@ -181,8 +193,14 @@ def ai_is_available() -> bool:
     except Exception:
         return False
 
-def _format_steps(items: List[str]) -> str:
-    lis = "".join([f"<li>{st.escape_markdown(i)}</li>" for i in items])
+def _format_steps(items) -> str:
+    """Retourne une <ul> sûre. Accepte str ou list[str]."""
+    if not items:
+        items = []
+    if isinstance(items, str):
+        items = [items]
+    items = [str(x) for x in items][:3] or ["Commit to just 5 minutes"]
+    lis = "".join([f"<li>{html.escape(i)}</li>" for i in items])
     return f'<ul class="plan">{lis}</ul>'
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -223,7 +241,6 @@ def fallback_coach(note: str, slot: str) -> Dict:
             "mantra": "Motion creates momentum",
             "source": "fallback"
         }
-    # générique selon le slot
     return {
         "analysis": f"{slot.title()} : cherche un petit objectif clair et réalisable.",
         "plan": [
@@ -269,7 +286,7 @@ Example:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.95,   # pas de curseur : réglé « créatif » par défaut
+        temperature=0.95,   # créativité élevée par défaut
         max_tokens=220,
     )
 
@@ -281,7 +298,7 @@ Example:
         analysis = str(data.get("analysis", "")).strip()
         plan = [str(x).strip() for x in (data.get("plan") or [])][:3]
         mantra = str(data.get("mantra", "")).strip()
-        if len(plan) < 3:  # garde 3 étapes
+        if len(plan) < 3:
             plan += ["Commit to just 5 minutes"] * (3 - len(plan))
         if not analysis:
             analysis = f"{slot.title()} — keep it tiny, clear, doable."
@@ -317,7 +334,7 @@ st.markdown(
 )
 
 # ────────────────────────────────────────────────────────────────────────────────
-# STEP 1 — MOMENT + NUDGE
+# STEP 1 — MOMENT + VISUEL EXPLICATIF
 # ────────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 1 — Pick your moment")
@@ -327,7 +344,49 @@ slot = st.radio(
     options=["morning", "midday", "evening"],
     index=0,
     horizontal=True,
-    help="This slightly tunes the tone of your coach.",
+    help="This tunes the tone and examples for your coach.",
+)
+
+MOMENT_INFO = {
+    "morning": {
+        "title": "Morning — Start bright & small",
+        "bullets": [
+            "⚡ Energy: fresh start, reduce friction",
+            "🎯 Focus: one clear tiny win (10–15 min)",
+            "🧭 Tone: action-first, momentum"
+        ],
+        "cls": "morning"
+    },
+    "midday": {
+        "title": "Midday — Reset & refocus",
+        "bullets": [
+            "🔄 Energy: re-align quickly",
+            "🎯 Focus: one compact block (15–20 min)",
+            "🧭 Tone: pragmatic, re-centering"
+        ],
+        "cls": "midday"
+    },
+    "evening": {
+        "title": "Evening — Wrap & seed tomorrow",
+        "bullets": [
+            "🌙 Energy: soft close, reduce anxiety",
+            "📝 Focus: reflect + seed next step",
+            "🧭 Tone: calming, clear next action"
+        ],
+        "cls": "evening"
+    },
+}
+
+info = MOMENT_INFO[slot]
+bul = "".join([f"<li>{html.escape(x)}</li>" for x in info["bullets"]])
+st.markdown(
+    f"""
+<div class="moment {info['cls']}">
+  <h4>{html.escape(info['title'])}</h4>
+  <ul style="margin:.2rem 0 0 .9rem;">{bul}</ul>
+</div>
+""",
+    unsafe_allow_html=True,
 )
 
 NUDGES = {
@@ -335,7 +394,7 @@ NUDGES = {
     "midday": "Midday Reset — turn one tiny win.",
     "evening": "Evening Wrap — reflect and set tomorrow’s seed."
 }
-st.caption(f"Prompt: {NUDGES[slot]}")
+st.caption(f"Prompt used by the coach: {NUDGES[slot]}")
 
 # ────────────────────────────────────────────────────────────────────────────────
 # STEP 2 — NOTE UTILISATEUR
@@ -344,13 +403,12 @@ st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 st.subheader("Step 2 — Tell me your note")
 
 with st.container():
-    with st.container():
-        user_note = st.text_area(
-            "What’s on your mind right now?",
-            placeholder="e.g., I’m stressed about my exam and I keep procrastinating.",
-            height=120,
-            label_visibility="visible",
-        )
+    user_note = st.text_area(
+        "What’s on your mind right now?",
+        placeholder="e.g., I’m stressed about my exam and I keep procrastinating.",
+        height=120,
+        label_visibility="visible",
+    )
     c1, c2 = st.columns(2)
     with c1:
         st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
