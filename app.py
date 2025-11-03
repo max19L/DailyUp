@@ -317,4 +317,5 @@ with gr.Blocks(title="Daily Up — Your AI Success Partner") as demo:
     send_btn.click(fn=on_send, inputs=[slot, user_reply, tone], outputs=[analysis, suggestion, coach_plan, journal])
 
 if __name__ == "__main__":
-    demo.launch()
+demo.launch(server_name="0.0.0.0", server_port=7860)
+
